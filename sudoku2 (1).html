@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Sudoku - Juego</title>
+<style>
+  body { font-family: Arial, sans-serif; padding:20px; background:#f6f6f6; }
+  .top { display:flex; gap:20px; align-items:center; margin-bottom:10px; }
+  .info { background:#fff; padding:8px 12px; border-radius:6px; box-shadow:0 0 0 1px #e1e1e1; }
+  #board { border-collapse:collapse; margin-top:10px; }
+  #board td { width:40px; height:40px; text-align:center; vertical-align:middle; font-size:18px; cursor:pointer; background:#fff; border:1px solid #ccc; }
+  .thick-right { border-right:3px solid #333; } .thick-bottom { border-bottom:3px solid #333; }
+  .thick-left { border-left:3px solid #333; } .thick-top { border-top:3px solid #333; }
+  .fixed { font-weight:700; color:#000; background:#e9e9e9; }
+  .sel { background:#dff0ff; }
+  .controls { margin-top:12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .btn { padding:6px 10px; border-radius:6px; border:1px solid #bbb; background:#fff; cursor:pointer; }
+  #cmd { width:220px; padding:6px 8px; border-radius:6px; border:1px solid #bbb; }
+  .disabled { opacity:0.6; pointer-events:none; }
+</style>
+</head>
+<body>
+  <div class="top">
+    <div class="info">Nivel: <span id="nivel">MuyFácil</span></div>
+    <div class="info">Vidas: <span id="vidas">3</span></div>
+    <div class="info">Completado: <span id="completado">0</span>/5</div>
+    <div class="info">Tiempo: <span id="tiempo">00:00</span></div>
+  </div>
+
+  <table id="board"></table>
+
+  <div class="controls">
+    <div id="numpad"></div>
+    <button class="btn" id="btn-solve">s (mostrar solución)</button>
+    <input id="cmd" placeholder="escribe: 1 3 9  ó salir" />
+    <button class="btn" id="btn-run">Ejecutar</button>
+    <button class="btn" id="btn-reset">Reiniciar progreso</button>
+    <div style="margin-left:auto;color:#666;font-size:13px">Entrada: fila(1-9) col(1-9) valor(0 borrar)</div>
+  </div>
+
+<script>
+const DIFFICULTIES = [
+  {name:'MuyFácil', min:36, max:49},
+  {name:'Fácil', min:32, max:35},
+  {name:'Medio', min:28, max:31},
+  {name:'Difícil', min:27, max:29},
+  {name:'MuyDifícil', min:17, max:23}
+];
+const SAVE_KEY = 'sudoku_save';
+let state = {
+  difficulty: 0,
+  lives: 3,
+  livesLostAccumulated: 0,
+  completions: [0,0,0,0,0],
+  puzzle: null,
+  working: null,
+  elapsedSeconds: 0,
+  running: true
+};
+let selected = {r:0,c:0};
+let timerInterval = null;
+let startTime = null;
+init();
+
+function init(){
+  silentLoad();
+  buildBoard();
+  buildNumpad();
+  updateInfo();
+  attachControls();
+  if (!state.puzzle) startNewPuzzle();
+  renderBoard();
+  startTimerIfNeeded();
+}
+
+function silentLoad(){
+  try{
+    const j = localStorage.getItem(SAVE_KEY);
+    if(!j) return;
+    Object.assign(state, JSON.parse(j));
+  }catch(e){}
+}
+
+function saveAndLock(){
+  try{
+    const s = {
+      ...state,
+      elapsedSeconds: state.elapsedSeconds + ((startTime)? Math.floor((Date.now()-startTime)/1000) : 0)
+    };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(s));
+  }catch(e){}
+  disableUI();
+  alert('Partida guardada');
+}
+
+function clearSave(){ localStorage.removeItem(SAVE_KEY); }
+function disableUI(){ state.running=false; document.querySelectorAll('.btn, #cmd, #numpad button').forEach(el=>el.classList.add('disabled')); }
+
+function attachControls(){
+  document.getElementById('btn-run').addEventListener('click', ()=> handleCommandInput());
+  document.getElementById('btn-solve').addEventListener('click', ()=> showSolution());
+  document.getElementById('btn-reset').addEventListener('click', ()=>{ if(confirm('Reiniciar progreso?')) resetProgress(); });
+  document.getElementById('cmd').addEventListener('keydown', e=>{ if(e.key==='Enter') handleCommandInput(); });
+}
+
+function buildBoard(){
+  const t = document.getElementById('board'); t.innerHTML='';
+  for(let r=0;r<9;r++){
+    const tr = document.createElement('tr');
+    for(let c=0;c<9;c++){
+      const td = document.createElement('td');
+      td.dataset.r = r; td.dataset.c = c;
+      td.addEventListener('click', ()=>{ if(!state.running) return; selectCell(r,c); });
+      if(c%3===0) td.classList.add('thick-left');
+      if((c+1)%3===0) td.classList.add('thick-right');
+      if(r%3===0) td.classList.add('thick-top');
+      if((r+1)%3===0) td.classList.add('thick-bottom');
+      tr.appendChild(td);
+    }
+    t.appendChild(tr);
+  }
+}
+
+function buildNumpad(){
+  const pad = document.getElementById('numpad'); pad.innerHTML='';
+  for(let v=1; v<=9; v++){
+    const b = document.createElement('button'); b.className='btn'; b.textContent=v;
+    b.addEventListener('click', ()=>{ if(!state.running) return; placeNumber(v); });
+    pad.appendChild(b);
+  }
+  const clr = document.createElement('button'); clr.className='btn'; clr.textContent='Borrar';
+  clr.addEventListener('click', ()=>{ if(!state.running) return; placeNumber(0); });
+  pad.appendChild(clr);
+}
+
+function updateInfo(){
+  document.getElementById('nivel').textContent = DIFFICULTIES[state.difficulty].name;
+  document.getElementById('vidas').textContent = state.lives;
+  document.getElementById('completado').textContent = state.completions[state.difficulty] + '/5';
+  document.getElementById('tiempo').textContent = formatTime(state.elapsedSeconds + ((startTime)? Math.floor((Date.now()-startTime)/1000) : 0));
+}
+
+function formatTime(sec){ sec=Math.floor(sec); const m=Math.floor(sec/60), s=sec%60; return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`; }
+
+function selectCell(r,c){
+  selected={r,c};
+  document.querySelectorAll('#board td').forEach(td=>td.classList.remove('sel'));
+  const td=document.querySelector(`#board td[data-r="${r}"][data-c="${c}"]`);
+  if(td) td.classList.add('sel');
+}
+
+function randInt(a,b){ return Math.floor(Math.random()*(b-a+1))+a; }
+function createEmptyGrid(){ return Array.from({length:9},()=>Array(9).fill(0)); }
+function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]];} return a; }
+
+function placeNumber(v){
+  if(!state.working) return;
+  const {r,c}=selected;
+  if(state.puzzle[r][c]!==0) return;
+  if(v===0){ state.working[r][c]=0; renderBoard(); return; }
+  if(!isValidMove(state.working,r,c,v)){
+    state.lives--;
+    if(state.lives<=0){ renderBoard(); alert('Has perdido todas tus vidas.'); disableUI(); return; }
+    renderBoard(); updateInfo(); return;
+  }
+  state.working[r][c]=v;
+  renderBoard();
+  if(isComplete(state.working) && isFullyValid(state.working)) puzzleSolved();
+  updateInfo();
+}
+
+function isValidMove(b,r,c,v){
+  for(let i=0;i<9;i++) if(b[r][i]===v || b[i][c]===v) return false;
+  const br=Math.floor(r/3)*3, bc=Math.floor(c/3)*3;
+  for(let i=0;i<3;i++) for(let j=0;j<3;j++) if(b[br+i][bc+j]===v) return false;
+  return true;
+}
+
+function isComplete(b){ return b.every(row=>row.every(v=>v!==0)); }
+
+function isFullyValid(b){
+  const check=(arr)=>new Set(arr).size===9;
+  for(let r=0;r<9;r++) if(!check(b[r])) return false;
+  for(let c=0;c<9;c++) if(!check(b.map(r=>r[c]))) return false;
+  for(let br=0;br<9;br+=3) for(let bc=0;bc<9;bc+=3){
+    let box=[]; for(let i=0;i<3;i++) for(let j=0;j<3;j++) box.push(b[br+i][bc+j]);
+    if(!check(box)) return false;
+  }
+  return true;
+}
+
+function puzzleSolved(){
+  alert('¡Sudoku completado!');
+  state.completions[state.difficulty]++;
+  if(state.completions[state.difficulty]>=5 && state.difficulty<DIFFICULTIES.length-1){
+    state.difficulty++; alert('¡Subes de nivel!');
+  }
+  startNewPuzzle();
+}
+
+function startNewPuzzle(){
+  const info=DIFFICULTIES[state.difficulty];
+  const clues=randInt(info.min,info.max);
+  const full=createEmptyGrid(); fillFullBoard(full);
+  let puzzle=JSON.parse(JSON.stringify(full));
+  let toRemove=81-clues;
+  while(toRemove>0){ const r=randInt(0,8), c=randInt(0,8); if(puzzle[r][c]!==0){ puzzle[r][c]=0; toRemove--; } }
+  state.puzzle=puzzle; state.working=JSON.parse(JSON.stringify(puzzle));
+  resetTimer(); renderBoard(); updateInfo();
+}
+
+function fillFullBoard(board){ fillBack(board,0,0); }
+function fillBack(board,r,c){
+  if(r===9) return true;
+  const nr=(c===8)?r+1:r, nc=(c===8)?0:c+1;
+  for(const n of shuffle([1,2,3,4,5,6,7,8,9])){
+    if(isValidMove(board,r,c,n)){ board[r][c]=n; if(fillBack(board,nr,nc)) return true; board[r][c]=0; }
+  }
+  return false;
+}
+
+function renderBoard(){
+  for(let r=0;r<9;r++) for(let c=0;c<9;c++){
+    const td=document.querySelector(`#board td[data-r="${r}"][data-c="${c}"]`);
+    td.textContent=state.working[r][c]||'';
+    td.classList.toggle('fixed', state.puzzle[r][c]!==0);
+  }
+  selectCell(selected.r,selected.c);
+}
+
+function handleCommandInput(){
+  const v=document.getElementById('cmd').value.trim();
+  document.getElementById('cmd').value='';
+  if(v.toLowerCase()==='salir'){ saveAndLock(); return; }
+  if(v.toLowerCase()==='s'){ showSolution(); return; }
+  const parts=v.split(/[\s,]+/);
+  if(parts.length!==3){ alert('Formato: fila columna valor'); return; }
+  const [r,c,val]=parts.map(x=>parseInt(x,10));
+  if([r,c,val].some(isNaN)||r<1||r>9||c<1||c>9||val<0||val>9){ alert('Rango inválido'); return; }
+  selected={r:r-1,c:c-1}; placeNumber(val);
+}
+
+function showSolution(){
+  const sol=solvePuzzle(state.puzzle.map(r=>r.slice()));
+  if(!sol){ alert('Sin solución'); return; }
+  state.working=sol; renderBoard(); puzzleSolved();
+}
+
+function solvePuzzle(board){ return backSolve(board)?board:null; }
+function backSolve(board){
+  for(let r=0;r<9;r++) for(let c=0;c<9;c++) if(board[r][c]===0){
+    for(let v=1;v<=9;v++){ if(isValidMove(board,r,c,v)){ board[r][c]=v; if(backSolve(board)) return true; board[r][c]=0; } }
+    return false;
+  }
+  return true;
+}
+
+function resetProgress(){
+  Object.assign(state,{lives:3,livesLostAccumulated:0,completions:[0,0,0,0,0],difficulty:0});
+  clearSave(); startNewPuzzle();
+}
+
+function resetTimer(){ if(timerInterval) clearInterval(timerInterval); startTime=Date.now(); state.elapsedSeconds=0; startTimerIfNeeded(); }
+function startTimerIfNeeded(){ if(timerInterval) clearInterval(timerInterval); startTime=Date.now(); timerInterval=setInterval(updateInfo,500); }
+</script>
+</body>
+</html>

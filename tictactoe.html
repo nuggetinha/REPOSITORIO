@@ -1,0 +1,131 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Tic Tac Toe</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 25px;
+        }
+        .board {
+            display: inline-grid;
+            grid-template-columns: repeat(3, 100px);
+            grid-template-rows: repeat(3, 100px);
+            gap: 2px;
+            background-color: #000;
+            padding: 2px;
+        }
+        .cell {
+            background-color: #fff;
+            border: none;
+            font-size: 36px;
+            cursor: pointer;
+        }
+        .cell:hover {
+            background-color: #f0f0f0;
+        }
+        button {
+            margin: 10px;
+            padding: 10px 10px;
+            font-size: 16px;
+        }
+        #status {
+            font-size: 24px;
+            margin: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Tic Tac Toe</h1>
+    <div id="status">Turno del jugador X</div>
+    <div class="board" id="board"></div>
+    <button onclick="resetGame()">Reiniciar Juego</button>
+
+    <script>
+        let board = ['', '', '', '', '', '', '', '', ''];
+        let currentPlayer = 'X';
+        let gameActive = true;
+
+        const winningConditions = [
+            [0, 1, 2],
+            [3, 4, 5],
+            [6, 7, 8],
+            [0, 3, 6],
+            [1, 4, 7],
+            [2, 5, 8],
+            [0, 4, 8],
+            [2, 4, 6]
+        ];
+
+        // Función para crear el tablero en pantalla
+        function createBoard() {
+            const boardElement = document.getElementById('board');
+            boardElement.innerHTML = ''; // Limpia el contenido previo
+            
+            // Crea 9 botones (celdas) y los agrega al tablero
+            for (let i = 0; i < 9; i++) {
+                const cell = document.createElement('button');
+                cell.className = 'cell'; // Aplica estilos de celda
+                cell.onclick = () => makeMove(i); // Asigna evento al hacer clic
+                cell.id = `cell-${i}`; // Asigna un ID único a cada celda
+                boardElement.appendChild(cell); // Agrega la celda al tablero
+            }
+        }
+
+        // Función que maneja el movimiento del jugador
+        function makeMove(cellIndex) {
+            // Si la celda ya está ocupada o el juego terminó, no hace nada
+            if (board[cellIndex] !== '' || !gameActive) {
+                return;
+            }
+
+            // Marca la celda con el símbolo del jugador actual
+            board[cellIndex] = currentPlayer;
+            document.getElementById(`cell-${cellIndex}`).textContent = currentPlayer;
+            
+            // Verifica si hay un ganador
+            if (checkWinner()) {
+                document.getElementById('status').textContent = `¡Jugador ${currentPlayer} gana!`;
+                gameActive = false;
+                return;
+            }
+
+            // Verifica si todas las celdas están llenas (empate)
+            if (board.every(cell => cell !== '')) {
+                document.getElementById('status').textContent = '¡Empate!';
+                gameActive = false;
+                return;
+            }
+
+            // Cambia al siguiente jugador
+            currentPlayer = currentPlayer === 'X' ? 'O' : 'X';
+            document.getElementById('status').textContent = `Turno del jugador ${currentPlayer}`;
+        }
+
+        // Función que verifica si hay una combinación ganadora
+        function checkWinner() {
+            return winningConditions.some(condition => {
+                const [a, b, c] = condition;
+                return board[a] && board[a] === board[b] && board[a] === board[c];
+            });
+        }
+
+        function resetGame() {
+            board = ['', '', '', '', '', '', '', '', '']; // Limpia el tablero
+            currentPlayer = 'X'; // Reinicia al jugador X
+            gameActive = true; // Activa el juego
+            document.getElementById('status').textContent = 'Turno del jugador X';
+            
+            // Limpia el contenido de cada celda en pantalla
+            for (let i = 0; i < 9; i++) {
+                document.getElementById(`cell-${i}`).textContent = '';
+            }
+        }
+
+        // Inicializar el juego
+        createBoard();
+    </script>
+</body>
+</html>
